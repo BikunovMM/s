@@ -1,60 +1,4 @@
-#ifndef MAIN_C
-#define MAIN_C
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <time.h>
-#include <llhttp.h>
-#include <uv.h>
-
-#define IP_ADDR         "0.0.0.0"
-#define IP_PORT         2077
-#define DEFAULT_BACKLOG 128                     
-
-#define HTTP_RESPONSE_BEFORE_BODY_LEN 173
-#define MAIN_PAGE_PATH   "pages/main/"
-#define MAIN_IMAGES_PATH  MAIN_PAGE_PATH "images/"
-#define MAIN_HTML_PATH    MAIN_PAGE_PATH "index.html"
-#define MAIN_FAVICON_PATH MAIN_IMAGES_PATH "favicon.ico"
-
-const char *day_names[] = {
-    "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
-};
-const char *month_names[] = {
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul",
-    "Aug", "Sep", "Oct", "Nov", "Dec"
-};
-
-typedef struct {
-    uv_tcp_t handle;
-    llhttp_t parser;
-} client_t;
-
-typedef struct {
-    uv_write_t  req;
-    uv_buf_t    buf;
-    client_t   *client;
-} write_req_t;
-
-int on_message_begin(llhttp_t *parser);
-int on_url(llhttp_t *parser, const char *at, size_t len);
-int on_status(llhttp_t *parser, const char *at, size_t len);
-int on_header_field(llhttp_t *parser, const char *at, size_t len);
-int on_header_value(llhttp_t *parser, const char *at, size_t len);
-int on_message_complete(llhttp_t *parser);
-
-void log_err(const char *format, ...);
-void on_new_conn(uv_stream_t *server, int status);
-void on_buf_alloc(uv_handle_t *handle, size_t sug_size, uv_buf_t *buf);
-void on_close(uv_handle_t *handle);
-void on_shutdown(uv_shutdown_t *req, int status);
-void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
-void on_write(uv_write_t *req, int status);
-
-#endif /* MAIN_C */
-
+#include "main.h"
 
 uv_loop_t         *loop     = NULL;
 llhttp_settings_t  settings = {0};
@@ -148,7 +92,7 @@ int on_url(llhttp_t *parser, const char *at, size_t len)
     target_str = (char*)malloc(target_len * sizeof(char));
     if (!target_str) {
         log_err("[!] [on_url] Failed malloc target_str.\n");
-        return 0;
+        return -1;
     }
 
     memcpy(target_str, at, target_len);
@@ -166,7 +110,7 @@ int on_status(llhttp_t *parser, const char *at, size_t len)
 
     return 0;
 }
-int on_header_field(llhttp_t *parser, const char *at, size_t len)
+int on_header_field(llhttp_t *parser, const char *at, size_t len) /* #0 */
 {
     (void)parser;
     (void)at;
@@ -174,7 +118,7 @@ int on_header_field(llhttp_t *parser, const char *at, size_t len)
 
     return 0;
 }
-int on_header_value(llhttp_t *parser, const char *at, size_t len)
+int on_header_value(llhttp_t *parser, const char *at, size_t len) /* #1 */
 {
     (void)parser;
     (void)at;
@@ -217,8 +161,7 @@ void on_new_conn(uv_stream_t *server, int status)
         puts("\t[*] [on_new_conn] accepted.");
 
         llhttp_init(&client->parser, HTTP_REQUEST, &settings);
-        //client->handle.data = client;
-
+ 
         uv_read_start((uv_stream_t*)client, on_buf_alloc, on_read);
     }
     else {
@@ -251,13 +194,21 @@ void on_buf_alloc(uv_handle_t *handle, size_t sug_size, uv_buf_t *buf)
 
 void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 {
-    client_t          *client  = NULL;
-    write_req_t       *req     = NULL;
-    char              *res_str = NULL;
-    enum llhttp_errno  err     = 0;
-    int                ret     = 0;
+    client_t          *client      = NULL;
+    write_req_t       *req         = NULL;
+    char              *res_str     = NULL;
+    enum llhttp_errno  err         = 0;
+    llhttp_t          *parser      = NULL;
+    FILE              *res_file    = NULL;
+    time_t             cur_time    = {0};
+    struct tm         *cur_time_tm = NULL;
+    long               file_len    = 0;
+    size_t             res_str_len = 0;
+    size_t             file_pos    = 0;
+    int                ret         = 0;
 
     client = (client_t*)stream;
+    parser = &client->parser;
 
     if (nread <= 0) {
         if (nread != UV_EOF) {
@@ -275,104 +226,85 @@ void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 
     req->client = client;
 
-    //
-    //
+    if (!buf->base || buf->len <= 0) {
+        log_err("[!] [on_read] Failed. buf->base is NULL or buf->len <= 0. 500.\n");
 
-    err = llhttp_execute(&client->parser, buf->base, nread);
-    if (err == HPE_OK) {
-        llhttp_t  *parser      = &client->parser;        
-        FILE      *res_file    = NULL;
-        time_t     cur_time    = {0};
-        struct tm *cur_time_tm = NULL;
-        long       file_len    = 0;
-        size_t     res_str_len = 0;
-        size_t     file_pos    = 0;
-        int        ret         = 0;
+        CREATE_HTTP_RESPONSE_STR(PAGE_500_HTML_PATH, HTTP_500,
+                            HTML_HEADER, res_str, res_file, ret,
+                            file_len, cur_time, cur_time_tm,
+                            file_pos, req, res_str_len,
+                            day_names, month_names);
+    }
+
+    err = llhttp_execute(parser, buf->base, nread);
+    if ((err == HPE_OK) && (parser->type == HTTP_REQUEST) &&
+        (parser->status_code == 0))
+    {
+        printf("\n^^^\n%s\n^^^\n", (char*)client->parser.data);
 
         printf("\t\tparsed: type: %d, method: %d, status_code: %d.\n",
             parser->type, parser->method, parser->status_code);
-        
-        if (parser->type == HTTP_REQUEST &&
-            parser->method == HTTP_GET   &&
-            parser->status_code == 0)
+
+        if (parser->method == HTTP_GET)
         {
-            res_file = fopen(MAIN_HTML_PATH, "rb");
-            if (!res_file) {
-                log_err("[!] [on_read] Failed to fopen res_file "
-                    "for main_html_path.\n");
-                goto free_req;
+            char *req_url = (char*)parser->data;
+
+            if (strcmp(req_url, ROOT_URL) == 0) { /* / */
+                printf("\n_%s_root - /\n\n", req_url);
+
+                CREATE_HTTP_RESPONSE_STR(PAGE_ROOT_HTML_PATH, HTTP_200,
+                                 HTML_HEADER, res_str, res_file, ret,
+                                 file_len, cur_time, cur_time_tm,
+                                 file_pos, req, res_str_len,
+                                 day_names, month_names);
             }
+            else if (strcmp(req_url, FAVICON_URL) == 0) {  /* favicon.ico for / */
+                printf("\n_%s_ favicon.ico\n\n", req_url);
 
-            ret = fseek(res_file, 0, SEEK_END);
-            if (ret != 0) {
-                log_err("[!] [on_read] Failed to fseek res_file "
-                    "to SEEK_END.\n");
-                fclose(res_file);
-                goto free_req;
+                CREATE_HTTP_RESPONSE_STR(FAVICON_PATH, HTTP_200,
+                                 FAVICON_HEADER, res_str, res_file, ret,
+                                 file_len, cur_time, cur_time_tm,
+                                 file_pos, req, res_str_len,
+                                 day_names, month_names);
             }
+            else if (strcmp(req_url, BAD_FAVICON_URL) == 0) { /* favicon.ico 404 500 */
+                printf("\n_%s_ favicon.ico\n\n", req_url);
 
-            file_len = ftell(res_file);
-            if (file_len == -1L) {
-                log_err("[!] [on_read] Failed to ftell res_file.\n");
-                fclose(res_file);
-                goto free_req;
+                CREATE_HTTP_RESPONSE_STR(PAGE_BAD_FAVICON_PATH, HTTP_200,
+                                 FAVICON_HEADER, res_str, res_file, ret,
+                                 file_len, cur_time, cur_time_tm,
+                                 file_pos, req, res_str_len,
+                                 day_names, month_names);
             }
-
-            ret = fseek(res_file, 0, SEEK_SET);
-            if (ret != 0) {
-                log_err("[!] [on_read] Failed to fseek res_file "
-                    "to SEEK_SET.\n");
-                fclose(res_file);
-                goto free_req;
-            }            
-
-            cur_time    = time(NULL);
-            cur_time_tm = localtime(&cur_time);
-
-            res_str_len = HTTP_RESPONSE_BEFORE_BODY_LEN + file_len;
-
-            res_str = (char*)malloc((res_str_len + 2) * sizeof(char));
-            if (!res_str) {
-                log_err("[!] [on_read] Failed to malloc res_str.\n");
-                fclose(res_file);
-                goto free_req;
+            else {  /* 404 */
+                log_err("\n_%s_ else 404 Not Found\n\n", req_url);
+                
+                CREATE_HTTP_RESPONSE_STR(PAGE_404_HTML_PATH, HTTP_404,
+                                 HTML_HEADER, res_str, res_file, ret,
+                                 file_len, cur_time, cur_time_tm,
+                                 file_pos, req, res_str_len,
+                                 day_names, month_names);
             }
-
-            snprintf(res_str, res_str_len,
-                "HTTP/1.1 200 OK\r\n"
-                "Server: Apache/2.4.41 (Ubuntu)\r\n"
-                "Date: %3s, %02d %3s %4d %02d:%02d:%02d GMT\r\n"
-                "Content-Type: text/html; charset=utf-8\r\n"
-                "Content-Length: %ld\r\n"
-                "\r\n",
-                day_names[cur_time_tm->tm_wday], cur_time_tm->tm_mday,
-                month_names[cur_time_tm->tm_mon], cur_time_tm->tm_year + 1900,
-                cur_time_tm->tm_hour, cur_time_tm->tm_min, cur_time_tm->tm_sec,
-                file_len
-            );
-
-            file_pos = fread(res_str + strlen(res_str),
-                             sizeof(char), file_len, res_file);
-            if (file_pos < (size_t)file_len) {
-                log_err("[!] [on_read] Failed to fread res_file.\n");
-                fclose(res_file);
-                goto free_req_data;
-            }
-
-            fclose(res_file);
-
-            res_str[res_str_len + 1] = '\0';
-
-            req->buf = uv_buf_init(res_str, res_str_len); // buf->base
+        }
+        else { /* any other method */
+            log_err("\n_%d_ else 404 Not Found\n\n", parser->method);
+                
+            CREATE_HTTP_RESPONSE_STR(PAGE_404_HTML_PATH, HTTP_404,
+                                HTML_HEADER, res_str, res_file, ret,
+                                file_len, cur_time, cur_time_tm,
+                                file_pos, req, res_str_len,
+                                day_names, month_names);
         }
     }
     else {
-        log_err("[!] [on_read] Failed to llhttp_execute.\n");
-        goto free_req;
+        log_err("[!] [on_read] Failed to llhttp_execute. page 500.\n");
+        
+        CREATE_HTTP_RESPONSE_STR(PAGE_500_HTML_PATH, HTTP_500,
+                            HTML_HEADER, res_str, res_file, ret,
+                            file_len, cur_time, cur_time_tm,
+                            file_pos, req, res_str_len,
+                            day_names, month_names);
     }
-
-    //
-    //
 
     ret = uv_write((uv_write_t*)req, stream, &req->buf, 1, on_write);
     if (ret < 0) {
@@ -405,20 +337,16 @@ void on_write(uv_write_t *req, int status)
         return;
     }
 
-    write_req_t *wr  = NULL;
-    int          ret = 0;
+    write_req_t   *wr       = NULL;
+    uv_shutdown_t *shutdown = NULL;
+    int            ret      = 0;
 
     wr = (write_req_t*)req;
+    wr->client->handle.data = wr;
 
     printf("\t\t[*] [on_write] response has been written:\n%s\n", wr->buf.base);
-    
-    wr->client->handle.data = wr;
-    //uv_close((uv_handle_t*)wr->client, on_close);  
-    
-    //free(wr->buf.base);
-    //free(wr);
 
-    uv_shutdown_t *shutdown = (uv_shutdown_t*)malloc(sizeof(uv_shutdown_t));
+    shutdown = (uv_shutdown_t*)malloc(sizeof(uv_shutdown_t));
     if (!shutdown) {
         log_err("[!] [on_write] Failed to malloc shutdown.\n");
         goto free_wr;
@@ -451,15 +379,6 @@ void on_close(uv_handle_t *handle)
     char     *parser_target_str = (char*)client->parser.data;
 
     free(parser_target_str);
-
-    /*
-    if (client->handle.data) {
-        write_req_t *wr = (write_req_t*)client->handle.data;
-        free(wr->buf.base);
-        free(wr);
-    }
-    */
-
     free(client);
 }
 
@@ -476,7 +395,6 @@ void on_shutdown(uv_shutdown_t *req, int status)
     uv_close((uv_handle_t*)wr->client, on_close);
 
     free(wr->buf.base);
-    //free(wr->client);
     free(wr);
     free(req);
 }
