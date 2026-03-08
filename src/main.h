@@ -6,8 +6,8 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
-#include <llhttp.h>
-#include <uv.h>
+#include "../libs/llhttp/llhttp.h"
+#include "../libs/libuv/uv.h"
 
 #define IP_ADDR         "0.0.0.0"
 #define IP_PORT         2077
