@@ -1,13 +1,19 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+/*
+ *  Change/Merge path with url, case all difference is in '/', which doesnt change anything!
+ *
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
-#include "../libs/llhttp/llhttp.h"
-#include "../libs/libuv/uv.h"
+#include <llhttp/llhttp.h>
+#include <libuv/uv.h>
+#include <libpq/libpq-fe.h>
 
 #define IP_ADDR         "0.0.0.0"
 #define IP_PORT         2077
@@ -27,11 +33,19 @@
 #define PAGES_IMAGES_PATH     PAGES_PATH "images/"
 #define FAVICON_PATH          PAGES_IMAGES_PATH "favicon.ico"
 #define PAGE_BAD_FAVICON_PATH PAGES_IMAGES_PATH "bad_favicon.ico"
+#define PAGE_JPEG_MOON_PATH   PAGES_IMAGES_PATH "moon.jpg"
+#define JS_PATH               PAGES_PATH "js/"
+#define JS_SCRIPT_PATH        JS_PATH "script.js"
+#define CSS_PATH              PAGES_PATH "css/"
+#define CSS_STYLE_PATH        CSS_PATH "style.css"
 
 #define ROOT_URL "/"
 
 #define FAVICON_URL     ROOT_URL "images/favicon.ico"
 #define BAD_FAVICON_URL ROOT_URL "images/bad_favicon.ico"
+#define JPEG_MOON_URL   ROOT_URL "images/moon.jpg"
+#define JS_SCRIPT_URL   ROOT_URL "js/script.js"
+#define CSS_STYLE_URL   ROOT_URL "css/style.css"
 
 #define HTTP_200 "HTTP/1.1 200 OK\r\n"
 #define HTTP_404 "HTTP/1.1 404 Not Found\r\n"
@@ -48,6 +62,24 @@
     SERVER_NAME"\r\n"                                \
     "Date: %3s, %02d %3s %4d %02d:%02d:%02d GMT\r\n" \
     "Content-Type: image/x-icon\r\n"                 \
+    "Content-Length: %ld\r\n"
+
+#define JPEG_HEADER                                  \
+    SERVER_NAME"\r\n"                                \
+    "Date: %3s, %02d %3s %4d %02d:%02d:%02d GMT\r\n" \
+    "Content-Type: image/jpeg\r\n"                   \
+    "Content-Length: %ld\r\n"
+
+#define JS_HEADER \
+    SERVER_NAME"\r\n"                                \
+    "Date: %3s, %02d %3s %4d %02d:%02d:%02d GMT\r\n" \
+    "Content-Type: text/javascript\r\n"              \
+    "Content-Length: %ld\r\n"
+
+#define CSS_HEADER \
+    SERVER_NAME"\r\n"                                \
+    "Date: %3s, %02d %3s %4d %02d:%02d:%02d GMT\r\n" \
+    "Content-Type: text/css\r\n"                     \
     "Content-Length: %ld\r\n"
 
 #define CREATE_HTTP_RESPONSE_STR(fpath, startline_str, header_str,     \

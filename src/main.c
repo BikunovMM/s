@@ -276,6 +276,33 @@ void on_read(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
                                  file_pos, req, res_str_len,
                                  day_names, month_names);
             }
+            else if (strcmp(req_url, JPEG_MOON_URL) == 0) {
+                printf("\n_%s_ moon.jpeg\n\n", req_url);
+
+                CREATE_HTTP_RESPONSE_STR(PAGE_JPEG_MOON_PATH, HTTP_200,
+                                 JPEG_HEADER, res_str, res_file, ret,
+                                 file_len, cur_time, cur_time_tm,
+                                 file_pos, req, res_str_len,
+                                 day_names, month_names);
+            }
+            else if (strcmp(req_url, JS_SCRIPT_URL) == 0) {
+                printf("\n_%s_ sctript.js\n\n", req_url);
+
+                CREATE_HTTP_RESPONSE_STR(JS_SCRIPT_PATH, HTTP_200,
+                                 JS_HEADER, res_str, res_file, ret,
+                                 file_len, cur_time, cur_time_tm,
+                                 file_pos, req, res_str_len,
+                                 day_names, month_names);
+            }
+            else if (strcmp(req_url, CSS_STYLE_URL) == 0) {
+                printf("\n_%s_ style.css\n\n", req_url);
+
+                CREATE_HTTP_RESPONSE_STR(CSS_STYLE_PATH, HTTP_200,
+                                 CSS_HEADER, res_str, res_file, ret,
+                                 file_len, cur_time, cur_time_tm,
+                                 file_pos, req, res_str_len,
+                                 day_names, month_names);
+            }
             else {  /* 404 */
                 log_err("\n_%s_ else 404 Not Found\n\n", req_url);
                 
